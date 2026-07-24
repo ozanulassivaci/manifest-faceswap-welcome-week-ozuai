@@ -337,6 +337,15 @@ class CameraPlaceholder(QWidget):
         self.setStyleSheet(f"background-color: {BG_COLOR};")
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(16)
+
+        self.error_label = QLabel("")
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setWordWrap(True)
+        self.error_label.setFixedWidth(320)
+        self.error_label.setStyleSheet(f"color: #ff6b6b; font-size: 13px;")
+        self.error_label.hide()
+        layout.addWidget(self.error_label)
 
         self.start_btn = QPushButton("▶  Başlat")
         self.start_btn.setFixedSize(220, 70)
@@ -353,6 +362,11 @@ class CameraPlaceholder(QWidget):
         """)
         self.start_btn.clicked.connect(on_start)
         layout.addWidget(self.start_btn)
+
+    def show_error(self, message: str):
+        self.error_label.setText(message)
+        self.error_label.show()
+        self.start_btn.setText("↻  Tekrar Dene")
 
 
 class KioskWindow(QMainWindow):
@@ -416,10 +430,31 @@ class KioskWindow(QMainWindow):
     def _start_camera(self):
         if self._webcam_widget is not None:
             return
-        self._webcam_widget = VirtualCamWebcamWindow(self._camera_index)
-        old_placeholder = self._splitter.replaceWidget(0, self._webcam_widget)
+        print(f"[Kiosk] Kamera başlatılıyor: index={self._camera_index}")
+        widget = VirtualCamWebcamWindow(self._camera_index)
+
+        # WebcamPreviewWindow, VideoCapturer.start() başarısız olursa
+        # kendini sessizce kapatmaya çalışır (bkz. modules/ui.py); bu
+        # yüzden burada da açıkça kontrol edip kullanıcıya görünür bir
+        # hata gösteriyoruz, aksi halde ekranda hiçbir şey görünmüyordu.
+        cap = getattr(widget, "_cap", None)
+        if cap is None or not cap.is_running:
+            print("[Kiosk] Kamera başlatılamadı (VideoCapturer.is_running=False). "
+                  "Kamera başka bir uygulama tarafından kullanılıyor olabilir "
+                  "ya da kamera indeksi hatalı olabilir.")
+            self._camera_placeholder.show_error(
+                "Kamera başlatılamadı.\n"
+                "Başka bir uygulama kamerayı kullanıyor olabilir - kontrol edip tekrar deneyin."
+            )
+            return
+
+        self._webcam_widget = widget
+        old_placeholder = self._splitter.replaceWidget(0, widget)
+        widget.show()
         if old_placeholder is not None:
             old_placeholder.deleteLater()
+        print(f"[Kiosk] Kamera hazır: {cap.actual_width}x{cap.actual_height}"
+              f"@{cap.actual_fps:.1f}fps")
 
     def _position_toggle_button(self):
         self._toggle_btn.move(self.width() - self._toggle_btn.width() - 16, 16)
