@@ -10,6 +10,9 @@ import queue
 
 import cv2
 
+from PySide6.QtWidgets import QLabel
+from PySide6.QtCore import Qt
+
 try:
     import pyvirtualcam
     VIRTUALCAM_AVAILABLE = True
@@ -24,6 +27,11 @@ from modules.ui import WebcamPreviewWindow, fit_image_to_size, _bgr_to_qpixmap
 # Sanal kamerayı açık/kapalı yapmak için buradan kontrol et
 ENABLE_VIRTUAL_CAM = True
 
+# Filtresiz (ham) önizlemenin köşedeki küçük kutusu için boyut/kenar payı
+RAW_PREVIEW_WIDTH = 220
+RAW_PREVIEW_HEIGHT = 165
+RAW_PREVIEW_MARGIN = 16
+
 
 class VirtualCamWebcamWindow(WebcamPreviewWindow):
     """
@@ -35,9 +43,66 @@ class VirtualCamWebcamWindow(WebcamPreviewWindow):
 
     def __init__(self, camera_index: int):
         self._vcam = None
+        self._raw_frame = None
         super().__init__(camera_index)
         if ENABLE_VIRTUAL_CAM and VIRTUALCAM_AVAILABLE:
             self._init_virtual_cam()
+        if getattr(self._cap, "is_running", False):
+            self._tap_raw_frames()
+            self._build_raw_preview()
+
+    def _tap_raw_frames(self):
+        """
+        Deep-Live-Cam'in kendi _CaptureWorker'ı (modules/ui.py) her karede
+        self._cap.read() çağırıp sonucu doğrudan işleme kuyruğuna koyuyor -
+        ham kareyi ayrıca dışarı vermiyor. modules/ui.py'a dokunmadan, aynı
+        tek okuma noktasına bir "gözlemci" ekliyoruz: VideoCapturer
+        INSTANCE'ının (sınıfının değil) read() metodunu, davranışını hiç
+        değiştirmeden (aynı (ret, frame) çiftini aynen döndürerek) sarmalıyıp
+        geçen kareyi de burada saklıyoruz. Ekstra okuma/thread YOK, yarış
+        durumu yok - tek okumaya tek gözlemci.
+        """
+        original_read = self._cap.read
+
+        def _read_and_tap():
+            ret, frame = original_read()
+            if ret:
+                self._raw_frame = frame
+            return ret, frame
+
+        self._cap.read = _read_and_tap
+
+    def _build_raw_preview(self):
+        """Sağ altta, filtreli görüntünün ÜSTÜNDE duran küçük ham kamera kutusu."""
+        self._raw_preview_label = QLabel(self)
+        self._raw_preview_label.setFixedSize(RAW_PREVIEW_WIDTH, RAW_PREVIEW_HEIGHT)
+        self._raw_preview_label.setAlignment(Qt.AlignCenter)
+        self._raw_preview_label.setStyleSheet(
+            "background-color: #000000; border: 2px solid #3d7fff; border-radius: 8px;"
+        )
+
+        self._raw_preview_caption = QLabel("Orijinal", self)
+        self._raw_preview_caption.setStyleSheet(
+            "color: #ffffff; font-size: 11px; font-weight: bold; "
+            "background-color: rgba(0, 0, 0, 160); padding: 2px 8px; border-radius: 6px;"
+        )
+        self._raw_preview_caption.adjustSize()
+
+        self._position_raw_preview()
+        self._raw_preview_label.raise_()
+        self._raw_preview_caption.raise_()
+
+    def _position_raw_preview(self):
+        if not hasattr(self, "_raw_preview_label"):
+            return
+        x = self.width() - RAW_PREVIEW_WIDTH - RAW_PREVIEW_MARGIN
+        y = self.height() - RAW_PREVIEW_HEIGHT - RAW_PREVIEW_MARGIN
+        self._raw_preview_label.move(x, y)
+        self._raw_preview_caption.move(x + 8, y - self._raw_preview_caption.height() - 4)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_raw_preview()
 
     def _init_virtual_cam(self):
         try:
@@ -79,6 +144,15 @@ class VirtualCamWebcamWindow(WebcamPreviewWindow):
         # ── Ekrandaki önizlemeyi güncelle (mevcut davranış) ──────────────
         display_frame = fit_image_to_size(bgr_frame, self.width(), self.height())
         self._image_label.setPixmap(_bgr_to_qpixmap(display_frame))
+
+        # ── Filtresiz ham görüntüyü köşedeki küçük kutuda göster ─────────
+        if self._raw_frame is not None and hasattr(self, "_raw_preview_label"):
+            raw_display = fit_image_to_size(
+                self._raw_frame,
+                self._raw_preview_label.width(),
+                self._raw_preview_label.height(),
+            )
+            self._raw_preview_label.setPixmap(_bgr_to_qpixmap(raw_display))
 
     def closeEvent(self, event) -> None:
         if self._vcam is not None:
