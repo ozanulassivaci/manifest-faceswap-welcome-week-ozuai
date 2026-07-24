@@ -33,7 +33,7 @@ import cv2
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QLabel, QScrollArea, QFrame
+    QGridLayout, QLabel, QScrollArea, QFrame, QSplitter, QPushButton
 )
 from PySide6.QtGui import QPixmap, QFont, QCursor, QShortcut, QKeySequence
 from PySide6.QtCore import Qt, Signal, QObject
@@ -326,16 +326,63 @@ class KioskWindow(QMainWindow):
         self.setWindowFlag(Qt.FramelessWindowHint, True)
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(webcam_widget, 1)
-        gallery_widget.setFixedWidth(PANEL_WIDTH)
-        layout.addWidget(gallery_widget, 0)
+        # ── Sürüklenebilir ayırıcı: kamera solda, galeri sağda ────────────
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.setHandleWidth(6)
+        self._splitter.setStyleSheet(f"""
+            QSplitter::handle {{ background-color: {CARD_COLOR}; }}
+            QSplitter::handle:hover {{ background-color: {ACCENT_COLOR}; }}
+        """)
+        self._splitter.addWidget(webcam_widget)
+        self._splitter.addWidget(gallery_widget)
+        self._splitter.setStretchFactor(0, 1)   # pencere büyüyünce kamera genişler
+        self._splitter.setStretchFactor(1, 0)   # galeri sürüklenen genişliğini korur
+        self._splitter.setCollapsible(0, False)  # kamera tarafı asla sıfıra inmesin
+        self._splitter.setCollapsible(1, True)   # galeri sürükleyerek de kapatılabilir
+
+        self._expanded_sizes = [screen_geo.width() - PANEL_WIDTH, PANEL_WIDTH]
+        self._splitter.setSizes(self._expanded_sizes)
+
+        self.setCentralWidget(self._splitter)
+
+        # ── Paneli aç/kapa butonu: splitter'ın dışında, hep görünür kalsın ─
+        self._toggle_btn = QPushButton("›", self)
+        self._toggle_btn.setFixedSize(40, 56)
+        self._toggle_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._toggle_btn.setToolTip("Paneli kapat/aç")
+        self._toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {CARD_COLOR};
+                color: {TEXT_COLOR};
+                border: 2px solid {ACCENT_COLOR};
+                border-radius: 8px;
+                font-size: 20px;
+            }}
+            QPushButton:hover {{ background-color: {CARD_HOVER}; }}
+        """)
+        self._toggle_btn.clicked.connect(self._toggle_panel)
+        self._position_toggle_button()
 
         QShortcut(QKeySequence("Ctrl+Shift+Q"), self, activated=self._exit_app)
+
+    def _position_toggle_button(self):
+        self._toggle_btn.move(self.width() - self._toggle_btn.width() - 16, 16)
+        self._toggle_btn.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_toggle_button()
+
+    def _toggle_panel(self):
+        if self._gallery_widget.isVisible():
+            self._expanded_sizes = self._splitter.sizes()
+            self._gallery_widget.hide()
+            self._toggle_btn.setText("‹")
+        else:
+            self._gallery_widget.show()
+            self._splitter.setSizes(self._expanded_sizes)
+            self._toggle_btn.setText("›")
+        self._position_toggle_button()
 
     def _exit_app(self):
         QApplication.instance().quit()
