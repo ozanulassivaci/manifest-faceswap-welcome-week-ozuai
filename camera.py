@@ -58,16 +58,20 @@ class VirtualCamWebcamWindow(WebcamPreviewWindow):
         ham kareyi ayrıca dışarı vermiyor. modules/ui.py'a dokunmadan, aynı
         tek okuma noktasına bir "gözlemci" ekliyoruz: VideoCapturer
         INSTANCE'ının (sınıfının değil) read() metodunu, davranışını hiç
-        değiştirmeden (aynı (ret, frame) çiftini aynen döndürerek) sarmalıyıp
-        geçen kareyi de burada saklıyoruz. Ekstra okuma/thread YOK, yarış
-        durumu yok - tek okumaya tek gözlemci.
+        değiştirmeden (aynı (ret, frame) çiftini aynen döndürerek) sarmalıyoruz.
+        Ekstra okuma/thread YOK, yarış durumu yok - tek okumaya tek gözlemci.
+
+        ÖNEMLİ: frame'i .copy() ile saklıyoruz. _ProcessingWorker aynı array
+        referansını mirror/swap/enhancer adımlarında yerinde (in-place)
+        değiştirebiliyor; kopyalamadan sadece referans saklarsak "ham" önizleme
+        de o değişiklikleri görüp filtre uygulanmış gibi titreşmeye başlıyordu.
         """
         original_read = self._cap.read
 
         def _read_and_tap():
             ret, frame = original_read()
             if ret:
-                self._raw_frame = frame
+                self._raw_frame = frame.copy()
             return ret, frame
 
         self._cap.read = _read_and_tap
