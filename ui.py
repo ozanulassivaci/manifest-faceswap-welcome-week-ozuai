@@ -22,10 +22,11 @@ from camera import VirtualCamWebcamWindow
 # ----------------------------------------------------------------------
 GALLERY_FOLDER = "gallery_images"
 LOGO_PATH = "club_logo.png"
-WINDOW_TITLE = "OZÜ AI Kulübü - Kendini Dönüştür!"
-THUMBNAIL_SIZE = 200
+WINDOW_TITLE = "OZU AI CLUB BE MANİFEST APP"
+GALLERY_TITLE = "Be\nManifest"
+THUMBNAIL_SIZE = 150
 GRID_COLUMNS = 2                       # panel dar olduğu için 2 sütun
-PANEL_WIDTH = 420                      # sağdaki galeri panelinin genişliği
+PANEL_WIDTH = 360                      # sağdaki galeri panelinin genişliği
 WINDOW_WIDTH = 1280                    # normal pencere modundaki başlangıç genişliği
 WINDOW_HEIGHT = 800                    # normal pencere modundaki başlangıç yüksekliği
 
@@ -116,7 +117,7 @@ class GalleryPanel(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        title = QLabel("Kendini\nDönüştür!")
+        title = QLabel(GALLERY_TITLE)
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(f"color: {TEXT_COLOR}; padding: 20px;")
         title_font = QFont()

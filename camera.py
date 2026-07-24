@@ -27,9 +27,11 @@ from modules.ui import WebcamPreviewWindow, fit_image_to_size, _bgr_to_qpixmap
 # Sanal kamerayı açık/kapalı yapmak için buradan kontrol et
 ENABLE_VIRTUAL_CAM = True
 
-# Filtresiz (ham) önizlemenin köşedeki küçük kutusu için boyut/kenar payı
-RAW_PREVIEW_WIDTH = 220
-RAW_PREVIEW_HEIGHT = 165
+# Filtresiz (ham) önizlemenin köşedeki kutusu için boyut/kenar payı
+# 4:3 oranı PREVIEW_DEFAULT_WIDTH/HEIGHT (640x480, modules/ui.py) ile aynı -
+# böylece letterbox/boşluk oluşmadan tam oturuyor.
+RAW_PREVIEW_WIDTH = 320
+RAW_PREVIEW_HEIGHT = 240
 RAW_PREVIEW_MARGIN = 16
 
 
