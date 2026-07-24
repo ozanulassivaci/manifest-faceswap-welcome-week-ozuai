@@ -10,9 +10,10 @@ Welcome Week Standı - Kiosk Arayüzü
 - Deep-Live-Cam'in kendi ayar penceresi (Mouth Mask, Face Enhancer vb.)
   arka planda, sol üst köşede küçük bir pencere olarak açık duruyor,
   gerektiğinde öne getirilebilir (Alt+Tab).
-- Uygulama açılır açılmaz kamera otomatik başlıyor ve galerideki İLK
-  fotoğrafı varsayılan yüz olarak kullanıyor - stand boşken bile canlı
-  görüntü akıyor.
+- Galeride varsayılan olarak "Sueda" fotoğrafı seçili gelir (bulunamazsa
+  ilk fotoğraf). Kamera OTOMATİK başlamaz: sol tarafta "Başlat" düğmesine
+  basılana kadar bir yer tutucu görünür - böylece kamera thread'i ilk
+  kareyi işlemeye başladığında source_path zaten dolu olur.
 - Çıkış için: pencereyi kapat (X) veya Ctrl+Shift+Q
 
 KLASÖR YAPISI (bu dosyayı Deep-Live-Cam'in ana klasörüne koy):
@@ -301,12 +302,18 @@ class GalleryPanel(QWidget):
             if p.suffix.lower() in extensions
         )
 
-    def select_default(self):
-        """Açılışta ilk fotoğrafı varsayılan olarak işaretle."""
-        if self.cards:
-            modules.globals.source_path = self.cards[0].image_path
-            self.cards[0].set_selected(True)
-            self.status_label.setText(f"Aktif: {Path(self.cards[0].image_path).stem}")
+    def select_default(self, preferred_name: str = "Sueda"):
+        """Açılışta 'preferred_name' fotoğrafını (bulunamazsa ilkini) varsayılan yap."""
+        if not self.cards:
+            return
+        card = next(
+            (c for c in self.cards
+             if Path(c.image_path).stem.lower() == preferred_name.lower()),
+            self.cards[0],
+        )
+        modules.globals.source_path = card.image_path
+        card.set_selected(True)
+        self.status_label.setText(f"Aktif: {Path(card.image_path).stem}")
 
     def on_photo_selected(self, image_path: str):
         print(f"[Galeri] Seçilen fotoğraf: {image_path}")
@@ -318,13 +325,44 @@ class GalleryPanel(QWidget):
         self.status_label.setText(f"Aktif: {Path(image_path).stem}")
 
 
+class CameraPlaceholder(QWidget):
+    """
+    Kamera henüz başlatılmadan önce splitter'ın sol tarafında duran
+    yer tutucu: ortada büyük bir "Başlat" düğmesi var, Live Preview
+    düğmesinin kiosk modundaki karşılığı gibi düşünülebilir.
+    """
+
+    def __init__(self, on_start, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"background-color: {BG_COLOR};")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+
+        self.start_btn = QPushButton("▶  Başlat")
+        self.start_btn.setFixedSize(220, 70)
+        self.start_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.start_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT_COLOR};
+                color: {TEXT_COLOR};
+                border-radius: 14px;
+                font-size: 20px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #2a6ae0; }}
+        """)
+        self.start_btn.clicked.connect(on_start)
+        layout.addWidget(self.start_btn)
+
+
 class KioskWindow(QMainWindow):
     """Kamera görüntüsü ve galeri panelini tek normal pencerede barındırır."""
 
-    def __init__(self, webcam_widget: QWidget, gallery_widget: GalleryPanel, screen_geo):
+    def __init__(self, camera_index: int, gallery_widget: GalleryPanel, screen_geo):
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
-        self._webcam_widget = webcam_widget
+        self._camera_index = camera_index
+        self._webcam_widget = None  # "Başlat" düğmesine basılana kadar oluşturulmaz
         self._gallery_widget = gallery_widget
 
         # Normal pencere: başlık çubuğu + taşınabilir/yeniden boyutlandırılabilir,
@@ -342,7 +380,8 @@ class KioskWindow(QMainWindow):
             QSplitter::handle {{ background-color: {CARD_COLOR}; }}
             QSplitter::handle:hover {{ background-color: {ACCENT_COLOR}; }}
         """)
-        self._splitter.addWidget(webcam_widget)
+        self._camera_placeholder = CameraPlaceholder(self._start_camera)
+        self._splitter.addWidget(self._camera_placeholder)
         self._splitter.addWidget(gallery_widget)
         self._splitter.setStretchFactor(0, 1)   # pencere büyüyünce kamera genişler
         self._splitter.setStretchFactor(1, 0)   # galeri sürüklenen genişliğini korur
@@ -373,6 +412,14 @@ class KioskWindow(QMainWindow):
         self._position_toggle_button()
 
         QShortcut(QKeySequence("Ctrl+Shift+Q"), self, activated=self._exit_app)
+
+    def _start_camera(self):
+        if self._webcam_widget is not None:
+            return
+        self._webcam_widget = VirtualCamWebcamWindow(self._camera_index)
+        old_placeholder = self._splitter.replaceWidget(0, self._webcam_widget)
+        if old_placeholder is not None:
+            old_placeholder.deleteLater()
 
     def _position_toggle_button(self):
         self._toggle_btn.move(self.width() - self._toggle_btn.width() - 16, 16)
@@ -433,21 +480,23 @@ def main():
     get_face_analyser()
     get_face_swapper()
 
-    # ── 3) Kamerayı hemen başlat (henüz gömülü, top-level pencere değil) ──
+    # ── 3) Kamerayı tespit et (henüz BAŞLATMA - "Başlat" düğmesine kadar) ──
     camera_indices, camera_names = get_available_cameras()
     if not camera_indices:
         print("[HATA] Hiçbir kamera algılanamadı.")
         sys.exit(1)
     camera_index = CAMERA_INDEX if CAMERA_INDEX in camera_indices else camera_indices[0]
 
-    webcam_widget = VirtualCamWebcamWindow(camera_index)
-
-    # ── 4) Galeri panelini oluştur (henüz gömülü, top-level pencere değil) ─
+    # ── 4) Galeri panelini oluştur, varsayılan yüzü (Sueda) ŞİMDİ seç ─────
+    # Kamera işleme thread'i başlamadan ÖNCE modules.globals.source_path
+    # dolu olmalı; aksi halde ilk karede bir yüz algılanırsa source_image=None
+    # ile swap denenip thread sessizce çöküyor ve bir daha görüntü gelmiyor.
     gallery = GalleryPanel()
-    gallery.select_default()  # ilk fotoğrafı varsayılan yüz yap
+    gallery.select_default()
 
     # ── 5) İkisini tek pencerede birleştir, normal pencere olarak aç ──────
-    kiosk = KioskWindow(webcam_widget, gallery, screen_geo)
+    # Kamera burada değil, kullanıcı "Başlat" düğmesine basınca oluşturulur.
+    kiosk = KioskWindow(camera_index, gallery, screen_geo)
     kiosk.show()
 
     sys.exit(app.exec())
