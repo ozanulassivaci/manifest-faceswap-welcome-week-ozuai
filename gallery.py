@@ -1,9 +1,10 @@
 """
 Welcome Week Standı - Tam Ekran Kiosk Arayüzü
 ============================================
-- Webcam canlı görüntüsü + karakter yüzü, ekranın SOLUNDA (boşluksuz).
-- Karakter seçim galerisi, ekranın SAĞINDA sabit bir şerit.
-- İkisi birlikte tüm ekranı kaplıyor (çerçevesiz, kiosk modu).
+- Webcam canlı görüntüsü ve karakter seçim galerisi TEK bir pencerede
+  (KioskWindow), aralarında sürüklenebilir/katlanabilir bir ayırıcı ile.
+- Webcam SOLDA, galeri SAĞDA sabit bir şerit olarak başlıyor; ikisi
+  birlikte tüm ekranı kaplıyor (çerçevesiz, kiosk modu).
 - Deep-Live-Cam'in kendi ayar penceresi (Mouth Mask, Face Enhancer vb.)
   arka planda, sol üst köşede küçük bir pencere olarak açık duruyor,
   gerektiğinde öne getirilebilir (Alt+Tab).
@@ -207,35 +208,21 @@ class PhotoCard(QFrame):
         super().mousePressEvent(event)
 
 
-class GalleryPanel(QMainWindow):
-    """Ekranın sağında sabit duran karakter seçim paneli."""
+class GalleryPanel(QWidget):
+    """Karakter seçim paneli - KioskWindow içine gömülen bir şerit widget'ı."""
 
-    def __init__(self, screen_geometry, webcam_width: int):
+    def __init__(self):
         super().__init__()
-        self.setWindowTitle(WINDOW_TITLE)
         self.signal = SelectionSignal()
         self.signal.photo_selected.connect(self.on_photo_selected)
 
         self.cards: list[PhotoCard] = []
-        self._screen_geo = screen_geometry
-
-        # Çerçevesiz, tam yükseklik, ekranın sağ kenarına yapışık
-        self.setWindowFlag(Qt.FramelessWindowHint, True)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-        self.setGeometry(
-            webcam_width, 0, PANEL_WIDTH, screen_geometry.height()
-        )
 
         self._build_ui()
         self.setStyleSheet(f"background-color: {BG_COLOR};")
 
-        # Çıkış kısayolu
-        QShortcut(QKeySequence("Ctrl+Shift+Q"), self, activated=self._exit_app)
-
     def _build_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
+        main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
@@ -326,6 +313,30 @@ class GalleryPanel(QMainWindow):
         modules.globals.source_path = image_path
         self.status_label.setText(f"Aktif: {Path(image_path).stem}")
 
+
+class KioskWindow(QMainWindow):
+    """Kamera görüntüsü ve galeri panelini tek çerçevesiz kiosk penceresinde barındırır."""
+
+    def __init__(self, webcam_widget: QWidget, gallery_widget: GalleryPanel, screen_geo):
+        super().__init__()
+        self.setWindowTitle(WINDOW_TITLE)
+        self._webcam_widget = webcam_widget
+        self._gallery_widget = gallery_widget
+
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(webcam_widget, 1)
+        gallery_widget.setFixedWidth(PANEL_WIDTH)
+        layout.addWidget(gallery_widget, 0)
+
+        QShortcut(QKeySequence("Ctrl+Shift+Q"), self, activated=self._exit_app)
+
     def _exit_app(self):
         QApplication.instance().quit()
 
@@ -357,24 +368,22 @@ def main():
     get_face_analyser()
     get_face_swapper()
 
-    # ── 3) Kamerayı hemen başlat, ekranın SOL tarafını kaplasın ──────────
-    webcam_width = screen_geo.width() - PANEL_WIDTH
-
+    # ── 3) Kamerayı hemen başlat (henüz gömülü, top-level pencere değil) ──
     camera_indices, camera_names = get_available_cameras()
     if not camera_indices:
         print("[HATA] Hiçbir kamera algılanamadı.")
         sys.exit(1)
     camera_index = CAMERA_INDEX if CAMERA_INDEX in camera_indices else camera_indices[0]
 
-    webcam_window = VirtualCamWebcamWindow(camera_index)
-    webcam_window.setWindowFlag(Qt.FramelessWindowHint, True)
-    webcam_window.setGeometry(0, 0, webcam_width, screen_geo.height())
-    webcam_window.show()
+    webcam_widget = VirtualCamWebcamWindow(camera_index)
 
-    # ── 4) Galeri panelini sağda başlat ──────────────────────────────────
-    gallery = GalleryPanel(screen_geo, webcam_width)
-    gallery.show()
+    # ── 4) Galeri panelini oluştur (henüz gömülü, top-level pencere değil) ─
+    gallery = GalleryPanel()
     gallery.select_default()  # ilk fotoğrafı varsayılan yüz yap
+
+    # ── 5) İkisini tek kiosk penceresinde birleştir ve tam ekran aç ───────
+    kiosk = KioskWindow(webcam_widget, gallery, screen_geo)
+    kiosk.showFullScreen()
 
     sys.exit(app.exec())
 
