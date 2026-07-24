@@ -1,17 +1,19 @@
 """
-Welcome Week Standı - Tam Ekran Kiosk Arayüzü
-============================================
+Welcome Week Standı - Kiosk Arayüzü
+====================================
 - Webcam canlı görüntüsü ve karakter seçim galerisi TEK bir pencerede
   (KioskWindow), aralarında sürüklenebilir/katlanabilir bir ayırıcı ile.
-- Webcam SOLDA, galeri SAĞDA sabit bir şerit olarak başlıyor; ikisi
-  birlikte tüm ekranı kaplıyor (çerçevesiz, kiosk modu).
+- Webcam SOLDA, galeri SAĞDA sabit bir şerit olarak başlıyor.
+- Normal bir pencere olarak açılır (başlık çubuğu var, taşınabilir/yeniden
+  boyutlandırılabilir, tam ekran DEĞİL) - ekranın ortasında, makul bir
+  boyutla (WINDOW_WIDTH x WINDOW_HEIGHT) başlar.
 - Deep-Live-Cam'in kendi ayar penceresi (Mouth Mask, Face Enhancer vb.)
   arka planda, sol üst köşede küçük bir pencere olarak açık duruyor,
   gerektiğinde öne getirilebilir (Alt+Tab).
 - Uygulama açılır açılmaz kamera otomatik başlıyor ve galerideki İLK
   fotoğrafı varsayılan yüz olarak kullanıyor - stand boşken bile canlı
   görüntü akıyor.
-- Çıkış için: Ctrl+Shift+Q
+- Çıkış için: pencereyi kapat (X) veya Ctrl+Shift+Q
 
 KLASÖR YAPISI (bu dosyayı Deep-Live-Cam'in ana klasörüne koy):
     Deep-Live-Cam/
@@ -136,6 +138,8 @@ WINDOW_TITLE = "OZÜ AI Kulübü - Kendini Dönüştür!"
 THUMBNAIL_SIZE = 200
 GRID_COLUMNS = 2                       # panel dar olduğu için 2 sütun
 PANEL_WIDTH = 420                      # sağdaki galeri panelinin genişliği
+WINDOW_WIDTH = 1280                    # normal pencere modundaki başlangıç genişliği
+WINDOW_HEIGHT = 800                    # normal pencere modundaki başlangıç yüksekliği
 CAMERA_INDEX = 0
 EXECUTION_PROVIDER = "cuda"            # RTX 4070 için
 
@@ -315,7 +319,7 @@ class GalleryPanel(QWidget):
 
 
 class KioskWindow(QMainWindow):
-    """Kamera görüntüsü ve galeri panelini tek çerçevesiz kiosk penceresinde barındırır."""
+    """Kamera görüntüsü ve galeri panelini tek normal pencerede barındırır."""
 
     def __init__(self, webcam_widget: QWidget, gallery_widget: GalleryPanel, screen_geo):
         super().__init__()
@@ -323,8 +327,13 @@ class KioskWindow(QMainWindow):
         self._webcam_widget = webcam_widget
         self._gallery_widget = gallery_widget
 
-        self.setWindowFlag(Qt.FramelessWindowHint, True)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        # Normal pencere: başlık çubuğu + taşınabilir/yeniden boyutlandırılabilir,
+        # ekranın ortasında makul bir boyutla açılır.
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.move(
+            screen_geo.x() + (screen_geo.width() - WINDOW_WIDTH) // 2,
+            screen_geo.y() + (screen_geo.height() - WINDOW_HEIGHT) // 2,
+        )
 
         # ── Sürüklenebilir ayırıcı: kamera solda, galeri sağda ────────────
         self._splitter = QSplitter(Qt.Horizontal)
@@ -340,7 +349,7 @@ class KioskWindow(QMainWindow):
         self._splitter.setCollapsible(0, False)  # kamera tarafı asla sıfıra inmesin
         self._splitter.setCollapsible(1, True)   # galeri sürükleyerek de kapatılabilir
 
-        self._expanded_sizes = [screen_geo.width() - PANEL_WIDTH, PANEL_WIDTH]
+        self._expanded_sizes = [WINDOW_WIDTH - PANEL_WIDTH, PANEL_WIDTH]
         self._splitter.setSizes(self._expanded_sizes)
 
         self.setCentralWidget(self._splitter)
@@ -428,9 +437,9 @@ def main():
     gallery = GalleryPanel()
     gallery.select_default()  # ilk fotoğrafı varsayılan yüz yap
 
-    # ── 5) İkisini tek kiosk penceresinde birleştir ve tam ekran aç ───────
+    # ── 5) İkisini tek pencerede birleştir, normal pencere olarak aç ──────
     kiosk = KioskWindow(webcam_widget, gallery, screen_geo)
-    kiosk.showFullScreen()
+    kiosk.show()
 
     sys.exit(app.exec())
 
