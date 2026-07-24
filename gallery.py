@@ -420,6 +420,15 @@ def main():
     settings_window._main.show()
     settings_window._main.setGeometry(20, 20, 640, 820)
 
+    # Kamera zaten aşağıda KioskWindow içine gömülü olarak açılacak.
+    # Ayar panelindeki "Live" düğmesi tıklanırsa modules/ui.py kendi
+    # başına AYRI bir "Live Preview" penceresi açıyor (_open_webcam_preview) -
+    # bunu önlemek için düğmeyi burada devre dışı bırakıyoruz.
+    settings_window._main.btn_live.setEnabled(False)
+    settings_window._main.btn_live.setToolTip(
+        "Kamera zaten ana pencerede açık - kiosk modunda devre dışı."
+    )
+
     # ── 2) Modelleri önceden yükle (açılışta bir kereye mahsus) ──────────
     get_face_analyser()
     get_face_swapper()
