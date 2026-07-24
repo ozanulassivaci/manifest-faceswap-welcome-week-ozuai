@@ -229,7 +229,7 @@ class CameraPlaceholder(QWidget):
         self.error_label.setAlignment(Qt.AlignCenter)
         self.error_label.setWordWrap(True)
         self.error_label.setFixedWidth(320)
-        self.error_label.setStyleSheet(f"color: #ff6b6b; font-size: 13px;")
+        self.error_label.setStyleSheet("color: #ff6b6b; font-size: 13px;")
         self.error_label.hide()
         layout.addWidget(self.error_label)
 
