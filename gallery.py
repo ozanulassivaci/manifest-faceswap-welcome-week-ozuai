@@ -57,7 +57,7 @@ from modules.core import decode_execution_providers, suggest_execution_threads
 from modules.face_analyser import get_face_analyser
 from modules.processors.frame.face_swapper import get_face_swapper
 from modules.ui import (
-    WebcamPreviewWindow, get_available_cameras,
+    WebcamPreviewWindow,
     fit_image_to_size, _bgr_to_qpixmap,
 )
 
@@ -141,7 +141,6 @@ GRID_COLUMNS = 2                       # panel dar olduğu için 2 sütun
 PANEL_WIDTH = 420                      # sağdaki galeri panelinin genişliği
 WINDOW_WIDTH = 1280                    # normal pencere modundaki başlangıç genişliği
 WINDOW_HEIGHT = 800                    # normal pencere modundaki başlangıç yüksekliği
-CAMERA_INDEX = 0
 EXECUTION_PROVIDER = "cuda"            # RTX 4070 için
 
 BG_COLOR = "#0d0d12"
@@ -372,10 +371,10 @@ class CameraPlaceholder(QWidget):
 class KioskWindow(QMainWindow):
     """Kamera görüntüsü ve galeri panelini tek normal pencerede barındırır."""
 
-    def __init__(self, camera_index: int, gallery_widget: GalleryPanel, screen_geo):
+    def __init__(self, get_camera_index, gallery_widget: GalleryPanel, screen_geo):
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
-        self._camera_index = camera_index
+        self._get_camera_index = get_camera_index  # () -> int, ayar panelindeki seçime bakar
         self._webcam_widget = None  # "Başlat" düğmesine basılana kadar oluşturulmaz
         self._gallery_widget = gallery_widget
 
@@ -430,8 +429,13 @@ class KioskWindow(QMainWindow):
     def _start_camera(self):
         if self._webcam_widget is not None:
             return
-        print(f"[Kiosk] Kamera başlatılıyor: index={self._camera_index}")
-        widget = VirtualCamWebcamWindow(self._camera_index)
+        camera_index = self._get_camera_index()
+        if camera_index is None:
+            self._camera_placeholder.show_error("Hiçbir kamera algılanamadı.")
+            return
+        print(f"[Kiosk] Kamera başlatılıyor: index={camera_index} "
+              f"(ayar panelindeki kamera seçimine göre)")
+        widget = VirtualCamWebcamWindow(camera_index)
 
         # WebcamPreviewWindow, VideoCapturer.start() başarısız olursa
         # kendini sessizce kapatmaya çalışır (bkz. modules/ui.py); bu
@@ -515,12 +519,21 @@ def main():
     get_face_analyser()
     get_face_swapper()
 
-    # ── 3) Kamerayı tespit et (henüz BAŞLATMA - "Başlat" düğmesine kadar) ──
-    camera_indices, camera_names = get_available_cameras()
-    if not camera_indices:
+    # ── 3) Kamera indeksi: ayar panelindeki "Kamera Seç" kutusundaki
+    #      seçime göre HER "Başlat" tıklamasında yeniden okunur - böylece
+    #      kullanıcı orada hangi kamerayı seçtiyse kiosk da onu açar,
+    #      gallery.py'nin kendi sabit CAMERA_INDEX'ini değil.
+    cam_settings = settings_window._main
+    if not getattr(cam_settings, "_camera_indices", None):
         print("[HATA] Hiçbir kamera algılanamadı.")
         sys.exit(1)
-    camera_index = CAMERA_INDEX if CAMERA_INDEX in camera_indices else camera_indices[0]
+
+    def resolve_camera_index():
+        indices = cam_settings._camera_indices
+        if not indices:
+            return None
+        idx = cam_settings.cb_camera.currentIndex()
+        return indices[idx] if 0 <= idx < len(indices) else indices[0]
 
     # ── 4) Galeri panelini oluştur, varsayılan yüzü (Sueda) ŞİMDİ seç ─────
     # Kamera işleme thread'i başlamadan ÖNCE modules.globals.source_path
@@ -531,7 +544,7 @@ def main():
 
     # ── 5) İkisini tek pencerede birleştir, normal pencere olarak aç ──────
     # Kamera burada değil, kullanıcı "Başlat" düğmesine basınca oluşturulur.
-    kiosk = KioskWindow(camera_index, gallery, screen_geo)
+    kiosk = KioskWindow(resolve_camera_index, gallery, screen_geo)
     kiosk.show()
 
     sys.exit(app.exec())
